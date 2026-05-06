@@ -46,18 +46,7 @@ func ResolveLOB(pr *PageReader, pm *PageMapping, ptr []byte) ([]byte, error) {
 		}
 	}
 
-	// Similarly for page ID: if uint32 is zero but uint16 at [10:12] is valid
-	// (and bytes [8:10] are zero in old format)
-	if firstLogID == 0 && len(ptr) >= 12 {
-		if le.Uint16(ptr[8:10]) == 0 {
-			firstLogID16 := int(le.Uint16(ptr[10:12]))
-			if firstLogID16 > 0 {
-				firstLogID = firstLogID16
-			}
-		}
-	}
-
-	if totalLen == 0 || firstLogID == 0 {
+	if totalLen == 0 {
 		return ptr, nil
 	}
 
@@ -65,22 +54,27 @@ func ResolveLOB(pr *PageReader, pm *PageMapping, ptr []byte) ([]byte, error) {
 		return nil, fmt.Errorf("LOB too large: %d bytes (max %d)", totalLen, maxLOBSize)
 	}
 
+	start, ok := resolveLOBStart(pr, pm, ptr)
+	if !ok {
+		if firstLogID == 0 {
+			return ptr, nil
+		}
+		return nil, fmt.Errorf("LOB page mapping missing for logical page %d", firstLogID)
+	}
+
 	buf := make([]byte, 0, totalLen)
 	remaining := totalLen
+	logID := start.logicalID
+	filePage := start.filePage
 
-	for logID := firstLogID; remaining > 0; logID++ {
-		fp, ok := pm.FilePageNum(logID)
-		if !ok {
-			return nil, fmt.Errorf("LOB page mapping missing for logical page %d", logID)
-		}
-
-		page, err := pr.ReadPage(fp)
+	for remaining > 0 {
+		page, err := pr.ReadPage(filePage)
 		if err != nil {
-			return nil, fmt.Errorf("reading LOB page %d (file page %d): %w", logID, fp, err)
+			return nil, fmt.Errorf("reading LOB page %d (file page %d): %w", logID, filePage, err)
 		}
 
 		if ClassifyPage(page) != PageLongValue {
-			return nil, fmt.Errorf("expected LongValue page at %d, got %s", fp, ClassifyPage(page))
+			return nil, fmt.Errorf("expected LongValue page at %d, got %s", filePage, ClassifyPage(page))
 		}
 
 		chunk := lvPageDataSize
@@ -96,6 +90,20 @@ func ResolveLOB(pr *PageReader, pm *PageMapping, ptr []byte) ([]byte, error) {
 
 		buf = append(buf, page[lvPageDataOffset:lvPageDataOffset+chunk]...)
 		remaining -= chunk
+
+		if remaining <= 0 {
+			break
+		}
+		if start.physicalContinuation {
+			filePage++
+			continue
+		}
+		logID++
+		fp, ok := pm.FilePageNum(logID)
+		if !ok {
+			return nil, fmt.Errorf("LOB page mapping missing for logical page %d", logID)
+		}
+		filePage = fp
 	}
 
 	if len(buf) == 0 {
@@ -105,4 +113,48 @@ func ResolveLOB(pr *PageReader, pm *PageMapping, ptr []byte) ([]byte, error) {
 		return nil, fmt.Errorf("LOB incomplete: expected %d bytes total, got %d", totalLen, len(buf))
 	}
 	return buf, nil
+}
+
+type lobStart struct {
+	logicalID            int
+	filePage             int
+	physicalContinuation bool
+}
+
+func resolveLOBStart(pr *PageReader, pm *PageMapping, ptr []byte) (lobStart, bool) {
+	le := binary.LittleEndian
+
+	fullID := int(le.Uint32(ptr[8:12]))
+	if fp, ok := longValueFilePage(pr, pm, fullID); ok {
+		return lobStart{logicalID: fullID, filePage: fp}, true
+	}
+
+	if le.Uint16(ptr[8:10]) == 0 {
+		highID := int(le.Uint16(ptr[10:12]))
+		if fp, ok := longValueFilePage(pr, pm, highID); ok {
+			return lobStart{logicalID: highID, filePage: fp}, true
+		}
+	}
+
+	lowID := int(le.Uint16(ptr[8:10]))
+	if fp, ok := longValueFilePage(pr, pm, lowID); ok {
+		return lobStart{logicalID: lowID, filePage: fp, physicalContinuation: true}, true
+	}
+
+	return lobStart{}, false
+}
+
+func longValueFilePage(pr *PageReader, pm *PageMapping, logicalID int) (int, bool) {
+	if logicalID == 0 {
+		return 0, false
+	}
+	fp, ok := pm.FilePageNum(logicalID)
+	if !ok {
+		return 0, false
+	}
+	page, err := pr.ReadPage(fp)
+	if err != nil || ClassifyPage(page) != PageLongValue {
+		return 0, false
+	}
+	return fp, true
 }

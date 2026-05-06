@@ -23,6 +23,37 @@ func TestResolveLOBRejectsOversizedValue(t *testing.T) {
 	}
 }
 
+func TestResolveLOBUsesLow16PageIDAndPhysicalContinuation(t *testing.T) {
+	data := make([]byte, 3*DefaultPageSize)
+
+	first := data[DefaultPageSize : 2*DefaultPageSize]
+	first[pageTypeOffset] = byte(PageLongValue)
+	binary.LittleEndian.PutUint16(first[4:6], 0x17ea)
+	copy(first[lvPageDataOffset:], bytes.Repeat([]byte{'A'}, lvPageDataSize))
+
+	second := data[2*DefaultPageSize : 3*DefaultPageSize]
+	second[pageTypeOffset] = byte(PageLongValue)
+	binary.LittleEndian.PutUint16(second[4:6], 0x17f3)
+	copy(second[lvPageDataOffset:], []byte("tail"))
+
+	ptr := make([]byte, 16)
+	binary.LittleEndian.PutUint32(ptr[0:4], uint32(lvPageDataSize+4))
+	binary.LittleEndian.PutUint32(ptr[8:12], 0x7f300000|0x17ea)
+
+	pr := NewPageReader(bytes.NewReader(data), &FileHeader{PageSize: DefaultPageSize}, 2)
+	pm := &PageMapping{mapping: map[int]int{0x17ea: 1}}
+
+	got, err := ResolveLOB(pr, pm, ptr)
+	if err != nil {
+		t.Fatalf("ResolveLOB: %v", err)
+	}
+	want := append(bytes.Repeat([]byte{'A'}, lvPageDataSize), []byte("tail")...)
+	if !bytes.Equal(got, want) {
+		t.Fatalf("resolved LOB mismatch: got len %d suffix %q, want len %d suffix %q",
+			len(got), got[len(got)-4:], len(want), want[len(want)-4:])
+	}
+}
+
 func TestReadDataPageSlotsRejectsInvalidSlotOffset(t *testing.T) {
 	page := make([]byte, DefaultPageSize)
 	page[pageTypeOffset] = byte(PageLeaf)
