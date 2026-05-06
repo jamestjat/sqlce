@@ -2,6 +2,7 @@ package format
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"os"
 	"testing"
 )
@@ -203,6 +204,117 @@ func TestParsePageRecords_Properties(t *testing.T) {
 			value = string(rec.Values[1])
 		}
 		t.Logf("  Row %d: Name=%q, Value=%q", i, name, value)
+	}
+}
+
+func TestParsePageRecords_NTextUsesVariableSection(t *testing.T) {
+	page := make([]byte, DefaultPageSize)
+	page[pageTypeOffset] = byte(PageLeaf)
+	binary.LittleEndian.PutUint32(page[20:24], 1)
+
+	text := []byte("ApplicationVersion")
+	entry := make([]byte, 0, 4+4+1+4+1+1+len(text)+1)
+	entry = append(entry,
+		0, 0, 0, 0, // nextChunk
+		2, 0, 0, 0, // colCount
+		0, // null bitmap
+	)
+	entry = append(entry, 42, 0, 0, 0) // fixed int column
+	entry = append(entry,
+		0x00, // fixed/variable separator
+		0x80, // variable-column header: present
+	)
+	entry = append(entry, text...)
+	entry = append(entry, 0x00) // terminator for final variable column
+
+	copy(page[24:], entry)
+	slot := uint32(0) | uint32(len(entry))<<12 | uint32(2)<<24
+	binary.LittleEndian.PutUint32(page[len(page)-4:], slot)
+
+	columns := []ColumnDef{
+		{Name: "ID", TypeID: TypeInt, Ordinal: 1, Position: 0},
+		{Name: "Logic", TypeID: TypeNText, Ordinal: 2, Position: 0},
+	}
+
+	parsed, err := ParsePageRecords(page, columns, computeNullBmpExtra(columns))
+	if err != nil {
+		t.Fatalf("ParsePageRecords: %v", err)
+	}
+	if parsed == nil || len(parsed.Records) != 1 {
+		t.Fatalf("expected 1 parsed record, got %#v", parsed)
+	}
+
+	rec := parsed.Records[0]
+	if got := binary.LittleEndian.Uint32(rec.Values[0]); got != 42 {
+		t.Fatalf("fixed int = %d, want 42", got)
+	}
+	if got := string(rec.Values[1]); got != string(text) {
+		t.Fatalf("ntext variable payload = %q, want %q", got, string(text))
+	}
+}
+
+func TestParsePageRecords_NTextLOBPointersWithZeroFlags(t *testing.T) {
+	page := make([]byte, DefaultPageSize)
+	page[pageTypeOffset] = byte(PageLeaf)
+	binary.LittleEndian.PutUint32(page[20:24], 1)
+
+	modifiedType := []byte("ApplicationVersion")
+	undoPtr := make([]byte, 16)
+	redoPtr := make([]byte, 16)
+	for i := range undoPtr {
+		undoPtr[i] = byte(i + 1)
+		redoPtr[i] = byte(i + 0x21)
+	}
+
+	entry := make([]byte, 0, 4+4+1+8+1+5+len(modifiedType)+len(undoPtr)+len(redoPtr))
+	entry = append(entry,
+		0, 0, 0, 0, // nextChunk
+		5, 0, 0, 0, // colCount
+		0, // null bitmap
+	)
+	entry = append(entry,
+		1, 0, 0, 0, // TraceLogIdentity
+		8, 0, 0, 0, // GroupIndex
+	)
+	entry = append(entry,
+		0x00,                          // fixed/variable separator
+		0x80, byte(len(modifiedType)), // ModifiedType inline string
+		0x00, byte(len(modifiedType)+len(undoPtr)), // UndoLogic pointer
+		0x00, // RedoLogic pointer (final column; remaining bytes belong to it)
+	)
+	entry = append(entry, modifiedType...)
+	entry = append(entry, undoPtr...)
+	entry = append(entry, redoPtr...)
+
+	copy(page[24:], entry)
+	slot := uint32(0) | uint32(len(entry))<<12 | uint32(2)<<24
+	binary.LittleEndian.PutUint32(page[len(page)-4:], slot)
+
+	columns := []ColumnDef{
+		{Name: "TraceLogIdentity", TypeID: TypeInt, Ordinal: 1, Position: 0},
+		{Name: "GroupIndex", TypeID: TypeInt, Ordinal: 2, Position: 4},
+		{Name: "ModifiedType", TypeID: TypeNVarchar, Ordinal: 3, Position: 0},
+		{Name: "UndoLogic", TypeID: TypeNText, Ordinal: 4, Position: 1},
+		{Name: "RedoLogic", TypeID: TypeNText, Ordinal: 5, Position: 2},
+	}
+
+	parsed, err := ParsePageRecords(page, columns, computeNullBmpExtra(columns))
+	if err != nil {
+		t.Fatalf("ParsePageRecords: %v", err)
+	}
+	if parsed == nil || len(parsed.Records) != 1 {
+		t.Fatalf("expected 1 parsed record, got %#v", parsed)
+	}
+
+	rec := parsed.Records[0]
+	if got := string(rec.Values[2]); got != string(modifiedType) {
+		t.Fatalf("ModifiedType = %q, want %q", got, string(modifiedType))
+	}
+	if got := hex.EncodeToString(rec.Values[3]); got != hex.EncodeToString(undoPtr) {
+		t.Fatalf("UndoLogic pointer = %s, want %s", got, hex.EncodeToString(undoPtr))
+	}
+	if got := hex.EncodeToString(rec.Values[4]); got != hex.EncodeToString(redoPtr) {
+		t.Fatalf("RedoLogic pointer = %s, want %s", got, hex.EncodeToString(redoPtr))
 	}
 }
 

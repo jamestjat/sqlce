@@ -28,8 +28,8 @@ func TestTypeMappingKnownTypes(t *testing.T) {
 		{TypeNVarchar, "nvarchar", 0, true},
 		{TypeVarBinary, "varbinary", 0, true},
 		{TypeBinary, "binary", 0, true},
-		{TypeImage, "image", 16, false},
-		{TypeNText, "ntext", 16, false},
+		{TypeImage, "image", 0, true},
+		{TypeNText, "ntext", 0, true},
 		{TypeNumeric, "numeric", 19, false},
 		{TypeUniqueIdentifier, "uniqueidentifier", 16, false},
 	}

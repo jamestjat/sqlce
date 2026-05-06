@@ -191,6 +191,7 @@ func parseVariableColumns(entry []byte, offset int, varCols []colLayout, values 
 	offset += headerSize
 
 	type varColInfo struct {
+		flag    byte
 		hasData bool
 		endOff  int
 	}
@@ -199,7 +200,8 @@ func parseVariableColumns(entry []byte, offset int, varCols []colLayout, values 
 	for i := 0; i < nVar; i++ {
 		flagIdx := i * 2
 		if flagIdx < len(varHeader) {
-			infos[i].hasData = varHeader[flagIdx] == 0x80
+			infos[i].flag = varHeader[flagIdx]
+			infos[i].hasData = infos[i].flag == 0x80
 		}
 		if i < nVar-1 {
 			offIdx := i*2 + 1
@@ -212,11 +214,6 @@ func parseVariableColumns(entry []byte, offset int, varCols []colLayout, values 
 	varDataStart := offset
 	prevEnd := 0
 	for i, info := range infos {
-		if !info.hasData {
-			values[varCols[i].schemaIdx] = nil
-			continue
-		}
-
 		start := prevEnd
 		var end int
 		if i < nVar-1 {
@@ -224,10 +221,23 @@ func parseVariableColumns(entry []byte, offset int, varCols []colLayout, values 
 		} else {
 			end = start
 			absPos := varDataStart + end
-			for absPos < len(entry) && entry[absPos] != 0x00 {
-				end++
-				absPos++
+			if info.hasData {
+				for absPos < len(entry) && entry[absPos] != 0x00 {
+					end++
+					absPos++
+				}
+			} else if varCols[i].typeID == TypeNText || varCols[i].typeID == TypeImage {
+				end = len(entry) - varDataStart
 			}
+		}
+
+		hasData := info.hasData
+		if !hasData && (varCols[i].typeID == TypeNText || varCols[i].typeID == TypeImage) {
+			hasData = end > start
+		}
+		if !hasData {
+			values[varCols[i].schemaIdx] = nil
+			continue
 		}
 
 		if end < start {
