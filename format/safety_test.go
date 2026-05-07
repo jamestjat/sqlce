@@ -110,6 +110,17 @@ func TestBuildPageMappingHandlesShortHeaderPage(t *testing.T) {
 	}
 }
 
+func TestScanLeafPagesByParentHandlesShortLeafPage(t *testing.T) {
+	page := make([]byte, pageTypeOffset+1)
+	page[pageTypeOffset] = byte(PageLeaf)
+	pr := NewPageReader(bytes.NewReader(page), &FileHeader{PageSize: len(page)}, 1)
+
+	got := scanLeafPagesByParent(pr, 1)
+	if len(got) != 0 {
+		t.Fatalf("groups = %v, want empty", got)
+	}
+}
+
 func TestFollowChunksStopsAtTraversalLimit(t *testing.T) {
 	pageCount := maxRecordChunkHops + 3
 	data := make([]byte, pageCount*DefaultPageSize)

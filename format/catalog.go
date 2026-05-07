@@ -763,7 +763,7 @@ func scanLeafPagesByParent(pr *PageReader, totalPages int) map[uint16][]uint16 {
 		if err != nil {
 			continue
 		}
-		if ClassifyPage(page) != PageLeaf || page[0x14] == 0 {
+		if ClassifyPage(page) != PageLeaf || len(page) < 0x16 || page[0x14] == 0 {
 			continue
 		}
 		parentID := binary.LittleEndian.Uint16(page[0x10:0x12])
