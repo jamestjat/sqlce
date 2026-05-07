@@ -6,6 +6,7 @@ import (
 	"crypto/cipher"
 	"crypto/rc4"
 	"encoding/binary"
+	"encoding/hex"
 	"os"
 	"testing"
 )
@@ -168,6 +169,53 @@ func TestDecryptionDeriveKeyDeterministic(t *testing.T) {
 	k3 := DeriveKey("different")
 	if bytes.Equal(k1, k3) {
 		t.Error("different passwords produced same key")
+	}
+}
+
+func TestEncodeUTF16LENonASCII(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		hex  string
+	}{
+		{name: "latin1", in: "café", hex: "630061006600e900"},
+		{name: "cjk", in: "日本語", hex: "e5652c679e8a"},
+		{name: "surrogate pair", in: "A😀", hex: "41003dd800de"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			want, err := hex.DecodeString(tc.hex)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := encodeUTF16LE(tc.in); !bytes.Equal(got, want) {
+				t.Fatalf("encodeUTF16LE(%q) = %x, want %x", tc.in, got, want)
+			}
+		})
+	}
+}
+
+func TestDeriveKeyNonASCIIReference(t *testing.T) {
+	tests := []struct {
+		password string
+		keyHex   string
+	}{
+		{password: "café", keyHex: "8c9f3eed8d0b4c75bdde53bf22d847cb"},
+		{password: "日本語", keyHex: "7999f45aba62c81764b530f21d639a68"},
+		{password: "A😀", keyHex: "4839a237c711518196777c55e8614529"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.password, func(t *testing.T) {
+			want, err := hex.DecodeString(tc.keyHex)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := DeriveKey(tc.password); !bytes.Equal(got, want) {
+				t.Fatalf("DeriveKey(%q) = %x, want %x", tc.password, got, want)
+			}
+		})
 	}
 }
 

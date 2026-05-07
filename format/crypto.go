@@ -9,12 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"unicode/utf16"
 )
 
 type EncryptionAlgorithm int
 
 const (
-	EncryptionNone   EncryptionAlgorithm = iota
+	EncryptionNone EncryptionAlgorithm = iota
 	EncryptionRC4
 	EncryptionAES128
 	EncryptionAES256
@@ -112,9 +113,10 @@ func DeriveKey(password string) []byte {
 }
 
 func encodeUTF16LE(s string) []byte {
-	buf := make([]byte, len(s)*2)
-	for i, r := range s {
-		binary.LittleEndian.PutUint16(buf[i*2:], uint16(r))
+	codeUnits := utf16.Encode([]rune(s))
+	buf := make([]byte, len(codeUnits)*2)
+	for i, codeUnit := range codeUnits {
+		binary.LittleEndian.PutUint16(buf[i*2:], codeUnit)
 	}
 	return buf
 }
