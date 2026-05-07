@@ -12,9 +12,9 @@ func TestGUIDParse(t *testing.T) {
 	// SQL Server byte order (mixed endian):
 	b := []byte{
 		0xFF, 0x19, 0x96, 0x6F, // Data1 LE: 6F9619FF
-		0x86, 0x8B,             // Data2 LE: 8B86
-		0x11, 0xD0,             // Data3 LE: D011
-		0xB4, 0x2D,             // Data4[0-1]
+		0x86, 0x8B, // Data2 LE: 8B86
+		0x11, 0xD0, // Data3 LE: D011
+		0xB4, 0x2D, // Data4[0-1]
 		0x00, 0xC0, 0x4F, 0xC9, 0x64, 0xFF, // Data4[2-7]
 	}
 
@@ -250,6 +250,34 @@ func TestConvertValueNumericNegative(t *testing.T) {
 	}
 	if s != "-99.9999" {
 		t.Errorf("got %q, want %q", s, "-99.9999")
+	}
+}
+
+func TestConvertValueNumericNegativeZero(t *testing.T) {
+	tests := []struct {
+		name  string
+		scale byte
+		want  string
+	}{
+		{name: "integer", scale: 0, want: "0"},
+		{name: "scaled", scale: 2, want: "0.00"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			data := make([]byte, 19)
+			data[0] = 18
+			data[1] = tc.scale
+			data[2] = 0
+
+			got, err := ConvertValue(data, 0x6C)
+			if err != nil {
+				t.Fatalf("ConvertValue numeric: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("got %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 

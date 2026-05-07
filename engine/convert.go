@@ -172,7 +172,7 @@ func parseNumeric(data []byte) (string, error) {
 		s = s[:len(s)-scale] + "." + s[len(s)-scale:]
 	}
 
-	if sign == 0 {
+	if sign == 0 && val.Sign() != 0 {
 		s = "-" + s
 	}
 
