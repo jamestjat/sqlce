@@ -120,6 +120,40 @@ func TestParsePageRecordsSkipsContinuationSlots(t *testing.T) {
 	}
 }
 
+func TestParsePageRecordsWarnsOnRecordParseError(t *testing.T) {
+	page := make([]byte, DefaultPageSize)
+	page[pageTypeOffset] = byte(PageLeaf)
+	binary.LittleEndian.PutUint32(page[20:24], 1)
+
+	entry := make([]byte, 9)
+	binary.LittleEndian.PutUint32(entry[4:8], 1)
+	copy(page[24:], entry)
+
+	slot := uint32(0) | uint32(len(entry))<<12 | uint32(2)<<24
+	binary.LittleEndian.PutUint32(page[len(page)-4:], slot)
+
+	columns := []ColumnDef{
+		{Name: "ID", TypeID: TypeInt, Ordinal: 1, Position: 0},
+	}
+
+	parsed, err := ParsePageRecords(page, columns)
+	if err != nil {
+		t.Fatalf("ParsePageRecords: %v", err)
+	}
+	if parsed == nil {
+		t.Fatal("expected PageRecords with warning")
+	}
+	if len(parsed.Records) != 0 {
+		t.Fatalf("records = %d, want 0", len(parsed.Records))
+	}
+	if len(parsed.Warnings) != 1 {
+		t.Fatalf("warnings = %d, want 1", len(parsed.Warnings))
+	}
+	if got := parsed.Warnings[0].Error(); !strings.Contains(got, "slot 0 record parse") {
+		t.Fatalf("warning = %q, want slot context", got)
+	}
+}
+
 func TestScanTableRecordsMultiExWarnsOnRecordParseError(t *testing.T) {
 	page := make([]byte, DefaultPageSize)
 	page[pageTypeOffset] = byte(PageLeaf)

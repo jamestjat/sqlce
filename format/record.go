@@ -61,7 +61,7 @@ func ParsePageRecords(page []byte, columns []ColumnDef, nullBmpExtra ...int) (*P
 	}
 
 	slots := readDataPageSlots(page)
-	for _, slot := range slots {
+	for slotIdx, slot := range slots {
 		if slot.flags&1 != 0 {
 			continue
 		}
@@ -78,6 +78,7 @@ func ParsePageRecords(page []byte, columns []ColumnDef, nullBmpExtra ...int) (*P
 		}
 		r, _, err := parseOneRecord(entry, 0, fixedCols, varCols, bitCols, len(columns), bmpExtra)
 		if err != nil {
+			pr.Warnings = append(pr.Warnings, fmt.Errorf("slot %d record parse: %w", slotIdx, err))
 			continue
 		}
 		if r != nil {
@@ -85,7 +86,7 @@ func ParsePageRecords(page []byte, columns []ColumnDef, nullBmpExtra ...int) (*P
 		}
 	}
 
-	if len(pr.Records) == 0 {
+	if len(pr.Records) == 0 && len(pr.Warnings) == 0 {
 		return nil, nil
 	}
 
