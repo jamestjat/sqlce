@@ -50,7 +50,7 @@ func ResolveLOB(pr *PageReader, pm *PageMapping, ptr []byte) ([]byte, error) {
 		return ptr, nil
 	}
 	if totalLen > maxLOBSize {
-		if _, ok := pm.FilePageNum(firstLogID); ok {
+		if _, ok := longValueFilePage(pr, pm, firstLogID); ok {
 			return nil, fmt.Errorf("LOB too large: %d bytes (max %d)", totalLen, maxLOBSize)
 		}
 	}

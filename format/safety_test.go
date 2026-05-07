@@ -12,7 +12,9 @@ func TestResolveLOBRejectsOversizedValue(t *testing.T) {
 	binary.LittleEndian.PutUint32(ptr[0:4], uint32(maxLOBSize+1))
 	binary.LittleEndian.PutUint32(ptr[8:12], 1)
 
-	pr := NewPageReader(bytes.NewReader(make([]byte, DefaultPageSize)), &FileHeader{PageSize: DefaultPageSize}, 1)
+	page := make([]byte, DefaultPageSize)
+	page[pageTypeOffset] = byte(PageLongValue)
+	pr := NewPageReader(bytes.NewReader(page), &FileHeader{PageSize: DefaultPageSize}, 1)
 	pm := &PageMapping{mapping: map[int]int{1: 0}}
 	_, err := ResolveLOB(pr, pm, ptr)
 	if err == nil {
