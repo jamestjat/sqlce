@@ -14,6 +14,7 @@ type PageRecords struct {
 	ObjectID    uint16
 	ColumnCount int
 	Records     []Record
+	Warnings    []error
 }
 
 func ParsePageRecords(page []byte, columns []ColumnDef, nullBmpExtra ...int) (*PageRecords, error) {
@@ -317,6 +318,9 @@ func ScanTableRecordsMultiEx(pr *PageReader, totalPages int, objectIDs []uint16,
 			continue
 		}
 		if parsed != nil {
+			for _, warning := range parsed.Warnings {
+				out.Warnings = append(out.Warnings, fmt.Errorf("page %d: %w", pg, warning))
+			}
 			out.Records = append(out.Records, parsed.Records...)
 		}
 	}
@@ -358,6 +362,9 @@ func ScanTableRecordsPagesEx(pr *PageReader, pages []int, objectIDs []uint16, co
 			continue
 		}
 		if parsed != nil {
+			for _, warning := range parsed.Warnings {
+				out.Warnings = append(out.Warnings, fmt.Errorf("page %d: %w", pg, warning))
+			}
 			out.Records = append(out.Records, parsed.Records...)
 		}
 	}
@@ -411,7 +418,7 @@ func parsePageRecordsFollow(page []byte, columns []ColumnDef, pr *PageReader, pm
 
 	le := binary.LittleEndian
 	slots := readDataPageSlots(page)
-	for _, slot := range slots {
+	for slotIdx, slot := range slots {
 		if slot.flags&1 != 0 {
 			continue // free/empty
 		}
@@ -435,6 +442,7 @@ func parsePageRecordsFollow(page []byte, columns []ColumnDef, pr *PageReader, pm
 
 		r, _, err := parseOneRecord(entry, 0, fixedCols, varCols, bitCols, len(columns), bmpExtra)
 		if err != nil {
+			result.Warnings = append(result.Warnings, fmt.Errorf("slot %d record parse: %w", slotIdx, err))
 			continue
 		}
 		if r != nil {
@@ -442,7 +450,7 @@ func parsePageRecordsFollow(page []byte, columns []ColumnDef, pr *PageReader, pm
 		}
 	}
 
-	if len(result.Records) == 0 {
+	if len(result.Records) == 0 && len(result.Warnings) == 0 {
 		return nil, nil
 	}
 

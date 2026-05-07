@@ -1,9 +1,11 @@
 package format
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/hex"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -115,6 +117,37 @@ func TestParsePageRecordsSkipsContinuationSlots(t *testing.T) {
 	}
 	if parsed != nil {
 		t.Fatalf("parsed %d records from continuation slot, want none", len(parsed.Records))
+	}
+}
+
+func TestScanTableRecordsMultiExWarnsOnRecordParseError(t *testing.T) {
+	page := make([]byte, DefaultPageSize)
+	page[pageTypeOffset] = byte(PageLeaf)
+	binary.LittleEndian.PutUint16(page[4:6], 42)
+	binary.LittleEndian.PutUint32(page[20:24], 1)
+
+	entry := make([]byte, 9)
+	binary.LittleEndian.PutUint32(entry[4:8], 1)
+	copy(page[24:], entry)
+
+	slot := uint32(0) | uint32(len(entry))<<12 | uint32(2)<<24
+	binary.LittleEndian.PutUint32(page[len(page)-4:], slot)
+
+	pr := NewPageReader(bytes.NewReader(page), &FileHeader{PageSize: DefaultPageSize}, 1)
+	columns := []ColumnDef{
+		{Name: "ID", TypeID: TypeInt, Ordinal: 1, Position: 0},
+	}
+
+	out := ScanTableRecordsMultiEx(pr, 1, []uint16{42}, columns)
+	if len(out.Records) != 0 {
+		t.Fatalf("records = %d, want 0", len(out.Records))
+	}
+	if len(out.Warnings) != 1 {
+		t.Fatalf("warnings = %d, want 1", len(out.Warnings))
+	}
+	got := out.Warnings[0].Error()
+	if !strings.Contains(got, "page 0") || !strings.Contains(got, "slot 0 record parse") {
+		t.Fatalf("warning = %q, want page and slot context", got)
 	}
 }
 
