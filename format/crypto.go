@@ -185,18 +185,7 @@ func (d *aes128Decryptor) DecryptPage(pageNum int, data []byte) ([]byte, error) 
 	binary.LittleEndian.PutUint32(iv, uint32(pageNum))
 
 	if len(data)%aes.BlockSize != 0 {
-		// Data not block-aligned: decrypt only the aligned portion
-		aligned := (len(data) / aes.BlockSize) * aes.BlockSize
-		if aligned == 0 {
-			out := make([]byte, len(data))
-			copy(out, data)
-			return out, nil
-		}
-		out := make([]byte, len(data))
-		mode := cipher.NewCBCDecrypter(block, iv)
-		mode.CryptBlocks(out[:aligned], data[:aligned])
-		copy(out[aligned:], data[aligned:])
-		return out, nil
+		return nil, fmt.Errorf("aes decrypt page %d: ciphertext length %d is not block-aligned", pageNum, len(data))
 	}
 
 	out := make([]byte, len(data))

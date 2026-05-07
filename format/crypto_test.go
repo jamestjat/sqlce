@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"os"
+	"strings"
 	"testing"
 )
 
@@ -153,6 +154,22 @@ func TestDecryptionAES128RoundTrip(t *testing.T) {
 	}
 	if !bytes.Equal(out, plaintext) {
 		t.Error("AES-128 round-trip failed: decrypted != plaintext")
+	}
+}
+
+func TestDecryptionAES128RejectsMisalignedCiphertext(t *testing.T) {
+	key := DeriveKey("secretpass")
+	dec, err := NewAES128Decryptor(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = dec.DecryptPage(3, make([]byte, aes.BlockSize+1))
+	if err == nil {
+		t.Fatal("expected misaligned ciphertext error")
+	}
+	if !strings.Contains(err.Error(), "not block-aligned") {
+		t.Fatalf("error = %q, want not block-aligned", err)
 	}
 }
 
