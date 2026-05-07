@@ -21,7 +21,9 @@ const maxLOBSize = 64 * 1024 * 1024            // 64MB safety cap
 // length as uint16: if the uint32 read yields a value where the low 16 bits
 // match bytes[2:4] and high bits are zero, the result is the same.
 //
-// Data spans consecutive logical page IDs, 4080 bytes per page.
+// Data spans consecutive logical page IDs, 4080 bytes per page. This was
+// checked against the bundled Depropanizer and multi-DB samples; the loop
+// below still validates every mapped page has the LongValue marker.
 func ResolveLOB(pr *PageReader, pm *PageMapping, ptr []byte) ([]byte, error) {
 	if len(ptr) < 12 {
 		return ptr, nil
@@ -32,26 +34,25 @@ func ResolveLOB(pr *PageReader, pm *PageMapping, ptr []byte) ([]byte, error) {
 	// Read full uint32 for both length and page ID
 	totalLen := int(le.Uint32(ptr[0:4]))
 	firstLogID := int(le.Uint32(ptr[8:12]))
+	totalLen16 := 0
+	if len(ptr) >= 4 && le.Uint16(ptr[0:2]) == 0 {
+		totalLen16 = int(le.Uint16(ptr[2:4]))
+	}
 
 	// Fallback: if uint32 length looks wrong (zero or huge) but uint16 at [2:4] is valid,
 	// use the uint16 value. This handles the original pointer layout where bytes [0:2]
 	// were unused (should be zero).
-	if (totalLen == 0 || totalLen > maxLOBSize) && len(ptr) >= 4 {
-		// Only fallback if this looks like old uint16 format (bytes [0:2] should be zero)
-		if le.Uint16(ptr[0:2]) == 0 {
-			totalLen16 := int(le.Uint16(ptr[2:4]))
-			if totalLen16 > 0 {
-				totalLen = totalLen16
-			}
-		}
+	if totalLen16 > 0 && (totalLen == 0 || totalLen > maxLOBSize) {
+		totalLen = totalLen16
 	}
 
 	if totalLen == 0 {
 		return ptr, nil
 	}
-
 	if totalLen > maxLOBSize {
-		return nil, fmt.Errorf("LOB too large: %d bytes (max %d)", totalLen, maxLOBSize)
+		if _, ok := pm.FilePageNum(firstLogID); ok {
+			return nil, fmt.Errorf("LOB too large: %d bytes (max %d)", totalLen, maxLOBSize)
+		}
 	}
 
 	start, ok := resolveLOBStart(pr, pm, ptr)
@@ -60,6 +61,12 @@ func ResolveLOB(pr *PageReader, pm *PageMapping, ptr []byte) ([]byte, error) {
 			return ptr, nil
 		}
 		return nil, fmt.Errorf("LOB page mapping missing for logical page %d", firstLogID)
+	}
+	if totalLen16 > 0 && firstLogID != start.logicalID {
+		totalLen = totalLen16
+	}
+	if totalLen > maxLOBSize {
+		return nil, fmt.Errorf("LOB too large: %d bytes (max %d)", totalLen, maxLOBSize)
 	}
 
 	buf := make([]byte, 0, totalLen)

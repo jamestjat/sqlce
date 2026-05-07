@@ -76,6 +76,27 @@ func TestResolveLOBRejectsIncompleteFirstChunk(t *testing.T) {
 	}
 }
 
+func TestResolveLOBUsesLegacyPageIDWhenFullUint32DoesNotMap(t *testing.T) {
+	ptr := make([]byte, 16)
+	binary.LittleEndian.PutUint16(ptr[2:4], 4)
+	binary.LittleEndian.PutUint16(ptr[10:12], 7)
+	binary.LittleEndian.PutUint32(ptr[12:16], 0x95000000)
+
+	page := make([]byte, DefaultPageSize)
+	page[pageTypeOffset] = byte(PageLongValue)
+	copy(page[lvPageDataOffset:], []byte("data"))
+	pr := NewPageReader(bytes.NewReader(page), &FileHeader{PageSize: DefaultPageSize}, 1)
+	pm := &PageMapping{mapping: map[int]int{7: 0}}
+
+	got, err := ResolveLOB(pr, pm, ptr)
+	if err != nil {
+		t.Fatalf("ResolveLOB: %v", err)
+	}
+	if string(got) != "data" {
+		t.Fatalf("got %q, want data", got)
+	}
+}
+
 func TestReadDataPageSlotsRejectsInvalidSlotOffset(t *testing.T) {
 	page := make([]byte, DefaultPageSize)
 	page[pageTypeOffset] = byte(PageLeaf)
