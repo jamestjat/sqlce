@@ -1,7 +1,10 @@
 package engine_test
 
 import (
+	"bytes"
+	"encoding/binary"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/jamestjat/sqlce/engine"
@@ -24,6 +27,47 @@ func openSDF(t *testing.T) (*format.PageReader, int) {
 	totalPages := int(fi.Size()) / h.PageSize
 	pr := format.NewPageReader(f, h, 128)
 	return pr, totalPages
+}
+
+func TestTableScanFailedLOBPointerWarnsAndReturnsNull(t *testing.T) {
+	page := make([]byte, format.DefaultPageSize)
+	page[6] = byte(format.PageLeaf)
+	binary.LittleEndian.PutUint16(page[4:6], 42)
+	binary.LittleEndian.PutUint32(page[20:24], 1)
+
+	entry := make([]byte, 25)
+	binary.LittleEndian.PutUint32(entry[4:8], 1)
+	binary.LittleEndian.PutUint32(entry[9:13], 4)
+	binary.LittleEndian.PutUint32(entry[17:21], 99)
+	copy(page[24:], entry)
+	slot := uint32(0) | uint32(len(entry))<<12 | uint32(2)<<24
+	binary.LittleEndian.PutUint32(page[len(page)-4:], slot)
+
+	pr := format.NewPageReader(bytes.NewReader(page), &format.FileHeader{PageSize: format.DefaultPageSize}, 1)
+	table := &format.TableDef{
+		Name: "BrokenLOB",
+		Columns: []format.ColumnDef{
+			{Name: "Body", TypeID: format.TypeNText, Ordinal: 1, Position: 0},
+		},
+	}
+
+	scanner := engine.NewTableScanner(pr, 1, table, []uint16{42})
+	result, err := scanner.Scan()
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(result.Rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(result.Rows))
+	}
+	if got := result.Rows[0][0]; got != nil {
+		t.Fatalf("LOB value = %v, want nil", got)
+	}
+	if len(result.Warnings) == 0 {
+		t.Fatal("expected LOB warning")
+	}
+	if !strings.Contains(result.Warnings[0].Error(), "LOB resolve") {
+		t.Fatalf("warning = %q, want LOB resolve", result.Warnings[0])
+	}
 }
 
 func TestTableScan_DataArrayTypes(t *testing.T) {

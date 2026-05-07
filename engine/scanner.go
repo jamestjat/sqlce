@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 
@@ -69,7 +70,8 @@ func (ts *TableScanner) Scan() (*ScanResult, error) {
 	}
 
 	for _, rec := range records {
-		row, err := convertRecord(rec, ts.table.Columns, ts.reader, pm)
+		row, warnings, err := convertRecord(rec, ts.table.Columns, ts.reader, pm)
+		result.Warnings = append(result.Warnings, warnings...)
 		if err != nil {
 			continue
 		}
@@ -187,8 +189,9 @@ func (ts *TableScanner) validateBitmapSize(computed int) int {
 
 // convertRecord converts raw record bytes to Go-typed values.
 // If pr and pm are non-nil, LOB columns (ntext/image) are resolved from LV pages.
-func convertRecord(rec format.Record, columns []format.ColumnDef, pr *format.PageReader, pm *format.PageMapping) ([]any, error) {
+func convertRecord(rec format.Record, columns []format.ColumnDef, pr *format.PageReader, pm *format.PageMapping) ([]any, []error, error) {
 	row := make([]any, len(columns))
+	var warnings []error
 	for i, col := range columns {
 		if i >= len(rec.Values) || rec.Values[i] == nil {
 			row[i] = nil
@@ -204,7 +207,16 @@ func convertRecord(rec format.Record, columns []format.ColumnDef, pr *format.Pag
 		if pr != nil && pm != nil && len(data) == 16 &&
 			(col.TypeID == format.TypeNText || col.TypeID == format.TypeImage) {
 			resolved, err := format.ResolveLOB(pr, pm, data)
-			if err == nil && len(resolved) > 16 {
+			if err != nil {
+				row[i] = nil
+				warnings = append(warnings, fmt.Errorf("column %s LOB resolve: %w", col.Name, err))
+				continue
+			}
+			if bytes.Equal(resolved, data) {
+				row[i] = nil
+				continue
+			}
+			if len(resolved) > 0 {
 				data = resolved
 			}
 		}
@@ -216,7 +228,7 @@ func convertRecord(rec format.Record, columns []format.ColumnDef, pr *format.Pag
 		}
 		row[i] = val
 	}
-	return row, nil
+	return row, warnings, nil
 }
 
 // FindTableObjectIDs scans all Leaf and Data pages and returns a map of
