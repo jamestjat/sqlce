@@ -54,6 +54,28 @@ func TestResolveLOBUsesLow16PageIDAndPhysicalContinuation(t *testing.T) {
 	}
 }
 
+func TestResolveLOBRejectsIncompleteFirstChunk(t *testing.T) {
+	ptr := make([]byte, 16)
+	binary.LittleEndian.PutUint32(ptr[0:4], 4)
+	binary.LittleEndian.PutUint32(ptr[8:12], 1)
+
+	page := make([]byte, lvPageDataOffset)
+	page[pageTypeOffset] = byte(PageLongValue)
+	pr := NewPageReader(bytes.NewReader(page), &FileHeader{PageSize: DefaultPageSize}, 1)
+	pm := &PageMapping{mapping: map[int]int{1: 0}}
+
+	got, err := ResolveLOB(pr, pm, ptr)
+	if err == nil {
+		t.Fatal("expected incomplete LOB error")
+	}
+	if bytes.Equal(got, ptr) {
+		t.Fatal("returned raw LOB pointer as resolved data")
+	}
+	if !strings.Contains(err.Error(), "LOB incomplete") {
+		t.Fatalf("error = %q, want LOB incomplete", err)
+	}
+}
+
 func TestReadDataPageSlotsRejectsInvalidSlotOffset(t *testing.T) {
 	page := make([]byte, DefaultPageSize)
 	page[pageTypeOffset] = byte(PageLeaf)

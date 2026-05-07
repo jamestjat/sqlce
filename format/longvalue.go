@@ -106,11 +106,11 @@ func ResolveLOB(pr *PageReader, pm *PageMapping, ptr []byte) ([]byte, error) {
 		filePage = fp
 	}
 
-	if len(buf) == 0 {
-		return ptr, nil
-	}
 	if remaining > 0 {
 		return nil, fmt.Errorf("LOB incomplete: expected %d bytes total, got %d", totalLen, len(buf))
+	}
+	if len(buf) == 0 {
+		return ptr, nil
 	}
 	return buf, nil
 }
