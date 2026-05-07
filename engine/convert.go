@@ -52,8 +52,8 @@ func ParseDateTime(b []byte) (time.Time, error) {
 	ticks := int32(binary.LittleEndian.Uint32(b[4:8]))
 
 	t := datetimeEpoch.AddDate(0, 0, int(days))
-	ms := int64(ticks) * 1000 / 300
-	t = t.Add(time.Duration(ms) * time.Millisecond)
+	ns := int64(ticks) * 10_000_000 / 3
+	t = t.Add(time.Duration(ns) * time.Nanosecond)
 
 	return t, nil
 }

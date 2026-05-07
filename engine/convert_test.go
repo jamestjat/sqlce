@@ -79,10 +79,16 @@ func TestDateTimeParse(t *testing.T) {
 			expect: time.Date(1899, 1, 1, 0, 0, 0, 0, time.UTC),
 		},
 		{
+			name:   "single tick preserves sub-millisecond precision",
+			days:   0,
+			ticks:  1,
+			expect: time.Date(1900, 1, 1, 0, 0, 0, 3333333, time.UTC),
+		},
+		{
 			name:   "max time 23:59:59.997",
 			days:   0,
 			ticks:  25919999,
-			expect: time.Date(1900, 1, 1, 23, 59, 59, 997000000, time.UTC),
+			expect: time.Date(1900, 1, 1, 23, 59, 59, 996666666, time.UTC),
 		},
 	}
 
@@ -97,9 +103,8 @@ func TestDateTimeParse(t *testing.T) {
 				t.Fatalf("ParseDateTime: %v", err)
 			}
 
-			diff := got.Sub(tc.expect)
-			if diff < -4*time.Millisecond || diff > 4*time.Millisecond {
-				t.Errorf("got %v, want %v (diff %v)", got, tc.expect, diff)
+			if !got.Equal(tc.expect) {
+				t.Errorf("got %v, want %v", got, tc.expect)
 			}
 		})
 	}
