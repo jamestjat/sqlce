@@ -315,6 +315,21 @@ func TestConvertValueNChar(t *testing.T) {
 	}
 }
 
+func TestConvertValueNVarcharCJK(t *testing.T) {
+	data := []byte{
+		0xe5, 0x65,
+		0x2c, 0x67,
+		0x9e, 0x8a,
+	}
+	got, err := ConvertValue(data, 0x1F)
+	if err != nil {
+		t.Fatalf("ConvertValue nvarchar: %v", err)
+	}
+	if got != "日本語" {
+		t.Errorf("got %q, want %q", got, "日本語")
+	}
+}
+
 func TestIsUTF16LE(t *testing.T) {
 	tests := []struct {
 		name string

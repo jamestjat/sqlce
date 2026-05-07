@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"time"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	"github.com/jamestjat/sqlce/format"
 )
@@ -118,13 +119,13 @@ func ConvertValue(data []byte, typeID uint16) (any, error) {
 		return ParseGUID(data)
 
 	case format.TypeNVarchar, format.TypeNChar:
-		if isUTF16LE(data) {
+		if shouldDecodeUTF16Text(data) {
 			return decodeUTF16LE(data), nil
 		}
 		return string(data), nil
 
 	case format.TypeNText:
-		if len(data) > 16 && isUTF16LE(data) {
+		if len(data) != 16 && shouldDecodeUTF16Text(data) {
 			return decodeUTF16LE(data), nil
 		}
 		out := make([]byte, len(data))
@@ -190,6 +191,13 @@ func isUTF16LE(data []byte) bool {
 		}
 	}
 	return zeros > len(data)/4
+}
+
+func shouldDecodeUTF16Text(data []byte) bool {
+	if len(data) < 2 || len(data)%2 != 0 {
+		return false
+	}
+	return isUTF16LE(data) || !utf8.Valid(data)
 }
 
 // decodeUTF16LE converts a UTF-16LE byte slice to a Go string.
