@@ -218,6 +218,7 @@ func convertRecord(rec format.Record, columns []format.ColumnDef, pr *format.Pag
 			}
 			if bytes.Equal(resolved, data) {
 				row[i] = nil
+				warnings = append(warnings, fmt.Errorf("column %s LOB resolve: pointer did not resolve to LV pages", col.Name))
 				continue
 			}
 			if len(resolved) > 0 {

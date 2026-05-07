@@ -65,3 +65,30 @@ func TestConvertRecordFailedLOBPointerWarnsAndReturnsNull(t *testing.T) {
 		t.Fatalf("warning = %q, want LOB resolve", warnings[0])
 	}
 }
+
+func TestConvertRecordUnresolvedLOBPointerWarnsAndReturnsNull(t *testing.T) {
+	ptr := make([]byte, 16)
+	binary.LittleEndian.PutUint32(ptr[0:4], 4)
+
+	pr := format.NewPageReader(bytes.NewReader(make([]byte, format.DefaultPageSize)), &format.FileHeader{PageSize: format.DefaultPageSize}, 1)
+	pm := &format.PageMapping{}
+	rec := format.Record{Values: [][]byte{ptr}}
+	columns := []format.ColumnDef{
+		{Name: "Body", TypeID: format.TypeNText, Ordinal: 1},
+	}
+
+	row, warnings, err := convertRecord(rec, columns, pr, pm)
+	if err != nil {
+		t.Fatalf("convertRecord: %v", err)
+	}
+	if row[0] != nil {
+		t.Fatalf("LOB value = %v, want nil", row[0])
+	}
+	if len(warnings) == 0 {
+		t.Fatal("expected unresolved LOB warning")
+	}
+	got := warnings[0].Error()
+	if !strings.Contains(got, "Body") || !strings.Contains(got, "pointer did not resolve") {
+		t.Fatalf("warning = %q, want column and unresolved pointer context", got)
+	}
+}
