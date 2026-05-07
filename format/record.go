@@ -64,6 +64,9 @@ func ParsePageRecords(page []byte, columns []ColumnDef, nullBmpExtra ...int) (*P
 		if slot.flags&1 != 0 {
 			continue
 		}
+		if slot.flags&2 == 0 {
+			continue
+		}
 		entry := slot.data
 		if len(entry) < 8 {
 			continue

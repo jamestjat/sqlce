@@ -93,6 +93,31 @@ func TestParsePageRecords_DataArrayTypes(t *testing.T) {
 	}
 }
 
+func TestParsePageRecordsSkipsContinuationSlots(t *testing.T) {
+	page := make([]byte, DefaultPageSize)
+	page[pageTypeOffset] = byte(PageLeaf)
+	binary.LittleEndian.PutUint32(page[20:24], 1)
+
+	entry := make([]byte, 13)
+	binary.LittleEndian.PutUint32(entry[4:8], 1)
+	binary.LittleEndian.PutUint32(entry[9:13], 42)
+	copy(page[24:], entry)
+
+	slot := uint32(0) | uint32(len(entry))<<12
+	binary.LittleEndian.PutUint32(page[len(page)-4:], slot)
+
+	columns := []ColumnDef{
+		{Name: "ID", TypeID: TypeInt, Ordinal: 1, Position: 0},
+	}
+	parsed, err := ParsePageRecords(page, columns)
+	if err != nil {
+		t.Fatalf("ParsePageRecords: %v", err)
+	}
+	if parsed != nil {
+		t.Fatalf("parsed %d records from continuation slot, want none", len(parsed.Records))
+	}
+}
+
 func TestParsePageRecords_ExternalRuntimeDataSource(t *testing.T) {
 	// Page 872 (obj 1697): 1 row, 5 cols
 	// GUID, GUID, nvarchar(32), INT, bit
