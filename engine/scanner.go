@@ -199,7 +199,11 @@ func convertRecord(rec format.Record, columns []format.ColumnDef, pr *format.Pag
 		}
 		data := rec.Values[i]
 		if len(data) == 0 {
-			row[i] = ""
+			if isStringColumn(col.TypeID) {
+				row[i] = ""
+			} else {
+				row[i] = nil
+			}
 			continue
 		}
 
@@ -229,6 +233,15 @@ func convertRecord(rec format.Record, columns []format.ColumnDef, pr *format.Pag
 		row[i] = val
 	}
 	return row, warnings, nil
+}
+
+func isStringColumn(typeID uint16) bool {
+	switch typeID {
+	case format.TypeNVarchar, format.TypeNChar, format.TypeNText:
+		return true
+	default:
+		return false
+	}
 }
 
 // FindTableObjectIDs scans all Leaf and Data pages and returns a map of
