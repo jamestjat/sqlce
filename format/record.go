@@ -60,8 +60,11 @@ func ParsePageRecords(page []byte, columns []ColumnDef, nullBmpExtra ...int) (*P
 		bmpExtra = nullBmpExtra[0]
 	}
 
-	slots := readDataPageSlots(page)
+	slots := readDataPageSlotsRaw(page)
 	for slotIdx, slot := range slots {
+		if slot.data == nil {
+			continue
+		}
 		if slot.flags&1 != 0 {
 			continue
 		}
@@ -418,8 +421,11 @@ func parsePageRecordsFollow(page []byte, columns []ColumnDef, pr *PageReader, pm
 	}
 
 	le := binary.LittleEndian
-	slots := readDataPageSlots(page)
+	slots := readDataPageSlotsRaw(page)
 	for slotIdx, slot := range slots {
+		if slot.data == nil {
+			continue
+		}
 		if slot.flags&1 != 0 {
 			continue // free/empty
 		}

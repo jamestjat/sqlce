@@ -158,14 +158,16 @@ func TestScanTableRecordsMultiExWarnsOnRecordParseError(t *testing.T) {
 	page := make([]byte, DefaultPageSize)
 	page[pageTypeOffset] = byte(PageLeaf)
 	binary.LittleEndian.PutUint16(page[4:6], 42)
-	binary.LittleEndian.PutUint32(page[20:24], 1)
+	binary.LittleEndian.PutUint32(page[20:24], 2)
 
 	entry := make([]byte, 9)
 	binary.LittleEndian.PutUint32(entry[4:8], 1)
 	copy(page[24:], entry)
 
-	slot := uint32(0) | uint32(len(entry))<<12 | uint32(2)<<24
-	binary.LittleEndian.PutUint32(page[len(page)-4:], slot)
+	emptySlot := uint32(0) | uint32(1)<<24
+	binary.LittleEndian.PutUint32(page[len(page)-4:], emptySlot)
+	recordSlot := uint32(0) | uint32(len(entry))<<12 | uint32(2)<<24
+	binary.LittleEndian.PutUint32(page[len(page)-8:], recordSlot)
 
 	pr := NewPageReader(bytes.NewReader(page), &FileHeader{PageSize: DefaultPageSize}, 1)
 	columns := []ColumnDef{
@@ -180,7 +182,7 @@ func TestScanTableRecordsMultiExWarnsOnRecordParseError(t *testing.T) {
 		t.Fatalf("warnings = %d, want 1", len(out.Warnings))
 	}
 	got := out.Warnings[0].Error()
-	if !strings.Contains(got, "page 0") || !strings.Contains(got, "slot 0 record parse") {
+	if !strings.Contains(got, "page 0") || !strings.Contains(got, "slot 1 record parse") {
 		t.Fatalf("warning = %q, want page and slot context", got)
 	}
 }
